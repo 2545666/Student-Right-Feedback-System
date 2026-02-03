@@ -1,0 +1,65 @@
+name: 🚀 自动部署到服务器
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  deploy:
+    name: 部署应用
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: 🔨 构建前端
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+      
+      - name: 🚀 部署到服务器
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /var/www/buct-feedback-system
+            
+            echo "📥 拉取最新代码..."
+            git pull origin main
+            
+            echo "📦 安装后端依赖..."
+            cd backend
+            npm ci --production
+            
+            echo "🔄 重启后端服务..."
+            pm2 restart feedback-backend || pm2 start server.js --name feedback-backend
+            
+            echo "📦 构建前端..."
+            cd ../frontend
+            npm ci
+            npm run build
+            
+            echo "📂 部署前端文件..."
+            sudo cp -r dist/* /var/www/html/
+            
+            echo "✅ 部署完成！"
+      
+      - name: ✅ 部署成功通知
+        if: success()
+        run: echo "🎉 部署成功完成！"
+      
+      - name: ❌ 部署失败通知
+        if: failure()
+        run: echo "💥 部署失败，请检查日志！"
